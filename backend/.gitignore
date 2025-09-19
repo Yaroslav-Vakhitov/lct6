@@ -1,0 +1,9 @@
+# Virtual environment
+.venv/
+
+# Lockfiles
+uv.lock
+
+# Python generated
+*.pyc
+__pycache__/

@@ -1,0 +1,23 @@
+[project]
+name = "inference-server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "AliakseiYafremau", email = "aleksey.yafremau@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.116.2",
+    "uvicorn>=0.35.0",
+]
+
+[project.scripts]
+inference-server = "inference_server:main"
+
+[build-system]
+requires = ["uv_build>=0.8.11,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = []
