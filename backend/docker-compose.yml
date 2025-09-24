@@ -1,0 +1,7 @@
+services:
+  backend:
+    container_name: inference-backend
+    image: inference-image
+    build: .
+    ports:
+      - "8000:8000"
