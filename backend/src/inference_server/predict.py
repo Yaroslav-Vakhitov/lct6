@@ -5,7 +5,7 @@ predict_router = APIRouter()
 
 
 @predict_router.post("/predict")
-def predict(request:ReviewRequest):
+def predict(request:ReviewRequest) -> PredictionsResponse:
     predictions = []
     for item in request.data:
         if item.id == 1:
