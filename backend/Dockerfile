@@ -15,7 +15,7 @@ ENV PATH="/root/.local/bin/:$PATH"
 WORKDIR /app
 
 COPY . /app/
-RUN uv sync --locked
+RUN uv sync
 ENV PATH="/app/.venv/bin:$PATH"
 
 CMD ["uvicorn", "src.inference_server.main:get_app", "--host", "0.0.0.0"]
