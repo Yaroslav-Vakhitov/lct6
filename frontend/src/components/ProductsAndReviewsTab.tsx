@@ -16,6 +16,7 @@ import { BLUE, GREEN, RED } from "../lib/constants"
 import { ReviewsColumn } from "./ReviewsColumn"
 import { ProductPhrasesDialog } from "./ProductPhrasesDialog"
 import { Check, ChevronDown, X } from "lucide-react"
+import { getDay } from "date-fns"
 
 export function ProductsAndReviewsTab() {
   const [dateRange, setDateRange] = useState<IDateRange>({ from: '2024-01-01', to: '2025-05-31' })
@@ -177,6 +178,80 @@ export function ProductsAndReviewsTab() {
   }, [allGrams])
 
   function openProductDetails(product: string) { setProductModal(product) }
+
+  // --- helpers for time/geo ---
+  function toJsDate(dateRu: string, timeHHmm: string): Date {
+    // "28.05.2025", "10:15" -> Date
+    return new Date(`${ruToISO(dateRu)}T${timeHHmm || "00:00"}:00`)
+  }
+
+  function negColor(percent: number): string {
+    // percent 0..1 -> от зелёного к красному
+    const p = Math.max(0, Math.min(1, percent))
+    const h = 130 - 130 * p // 130 (green) -> 0 (red)
+    return `hsl(${h} 70% 45%)`
+  }
+
+  // ---------- (4) Гео-аналитика: города ----------
+  type CityRow = { city: string; total: number; negPct: number; avgRating: number }
+  const cityTable = useMemo<CityRow[]>(() => {
+    const m = new Map<string, { total: number; neg: number; ratingSum: number; ratingN: number }>()
+    for (const r of filtered) {
+      const key = r.location.trim()
+      if (!key) continue
+      if (!m.has(key)) m.set(key, { total: 0, neg: 0, ratingSum: 0, ratingN: 0 })
+      const rec = m.get(key)!
+      rec.total += 1
+      if (mapSentiment(r.sentiment) === "negative") rec.neg += 1
+      if (typeof r.rating === "number") { rec.ratingSum += r.rating; rec.ratingN += 1 }
+    }
+    return Array.from(m.entries()).map(([city, v]) => ({
+      city,
+      total: v.total,
+      negPct: v.total ? v.neg / v.total : 0,
+      avgRating: v.ratingN ? v.ratingSum / v.ratingN : 0,
+    }))
+    .sort((a,b) => b.total - a.total) // топ по объёму
+    .slice(0, 20)
+  }, [filtered])
+
+  // ---------- (5) Heatmap 7×24 ----------
+  type Bin = { count: number; neg: number }
+  const heatmap7x24 = useMemo(() => {
+    // индексы: row=0..6 (Пн..Вс), col=0..23 (часы)
+    const grid: Bin[][] = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ count: 0, neg: 0 })))
+    for (const r of filtered) {
+      const d = toJsDate(r.date, r.time)
+      // getDay: 0=Sunday .. 6=Saturday -> нам 0=Пн..6=Вс
+      const js = getDay(d) // 0..6
+      const row = js === 0 ? 6 : js - 1
+      const hour = d.getHours()
+      const cell = grid[row][hour]
+      cell.count += 1
+      if (mapSentiment(r.sentiment) === "negative") cell.neg += 1
+    }
+    return grid
+  }, [filtered])
+
+  // ---------- (10) Аномалии: всплески негатива по дням ----------
+  type AlertRow = { date: string; count: number; threshold: number }
+  const alerts = useMemo<AlertRow[]>(() => {
+    const dayNeg = new Map<string, number>() // YYYY-MM-DD -> #neg
+    for (const r of filtered) {
+      if (mapSentiment(r.sentiment) !== "negative") continue
+      const key = ruToISO(r.date)
+      dayNeg.set(key, (dayNeg.get(key) ?? 0) + 1)
+    }
+    const values = Array.from(dayNeg.values())
+    if (values.length === 0) return []
+    const mean = values.reduce((a,b)=>a+b,0) / values.length
+    const std  = Math.sqrt(values.reduce((a,b)=> a + Math.pow(b-mean,2), 0) / values.length)
+    const thr = mean + 2 * std // правило «среднее + 2σ»
+    return Array.from(dayNeg.entries())
+      .filter(([,c]) => c > thr)
+      .map(([date, count]) => ({ date, count, threshold: Number(thr.toFixed(2)) }))
+      .sort((a,b) => b.count - a.count)
+  }, [filtered])
 
   return (
     <div className="space-y-6">
@@ -393,6 +468,108 @@ export function ProductsAndReviewsTab() {
               </button>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Топ городов */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Города: объём, % негатива, средний рейтинг</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {cityTable.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Нет данных</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-muted-foreground">
+                  <tr className="[&>th]:py-2">
+                    <th className="w-[40%]">Город/регион</th>
+                    <th>Отзывов</th>
+                    <th>% негатива</th>
+                    <th>Avg rating</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cityTable.map((row) => (
+                    <tr key={row.city} className="border-t">
+                      <td className="py-2">{row.city}</td>
+                      <td className="py-2">{row.total}</td>
+                      <td className="py-2">
+                        <span
+                          className="inline-block rounded px-2 py-0.5 text-white"
+                          style={{ backgroundColor: negColor(row.negPct) }}
+                          title={`${Math.round(row.negPct*100)}% негатива`}
+                        >
+                          {Math.round(row.negPct * 100)}%
+                        </span>
+                      </td>
+                      <td className="py-2">{row.avgRating.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      
+      {/* Дни недели х Часы */ }
+      <Card>
+        <CardHeader>
+          <CardTitle>Паттерны по времени: дни недели × часы (тон: % негатива)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-[auto_repeat(24,minmax(14px,1fr))] gap-1 text-xs">
+            {/* шапка часов */}
+            <div />
+            {Array.from({ length: 24 }, (_,h)=>(
+              <div key={h} className="text-center text-[10px] text-muted-foreground">{h}</div>
+            ))}
+            {/* строки по дням */}
+            {["Пн","Вт","Ср","Чт","Пт","Сб","Вс"].map((dname, iRow) => (
+              <>
+                <div key={`label-${dname}`} className="pr-1 text-right text-muted-foreground">{dname}</div>
+                {Array.from({ length: 24 }, (_,h)=> {
+                  const cell = heatmap7x24[iRow][h]
+                  const negPct = cell.count ? cell.neg / cell.count : 0
+                  return (
+                    <div
+                      key={`${iRow}-${h}`}
+                      className="h-5 rounded"
+                      style={{ backgroundColor: cell.count ? negColor(negPct) : "#f1f5f9" }}
+                      title={`Час: ${h}:00 • Отзывов: ${cell.count} • Негатив: ${Math.round(negPct*100)}%`}
+                    />
+                  )
+                })}
+              </>
+            ))}
+          </div>
+          <div className="mt-2 text-xs text-muted-foreground">Цвет = доля негатива (зелёный→красный), серый — нет отзывов.</div>
+        </CardContent>
+      </Card>
+
+      {/* Аномалии */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Аномалии: всплески негатива по дням</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {alerts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Аномалий не обнаружено по текущим фильтрам.</p>
+          ) : (
+            <ul className="space-y-2">
+              {alerts.map(a => (
+                <li key={a.date} className="flex items-center justify-between rounded-md border p-2">
+                  <div>
+                    <div className="font-medium">{a.date}</div>
+                    <div className="text-xs text-muted-foreground">Порог (μ+2σ): {a.threshold}</div>
+                  </div>
+                  <Badge variant="destructive" className="text-base">{a.count}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
 
