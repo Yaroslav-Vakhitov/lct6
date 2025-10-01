@@ -1,23 +1,44 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import type { IDateRange, TSentiment } from "../core/types"
+import type { IDateRange, TSentiment, TSource } from "../core/types"
 import { isAfter, isBefore, parseISO } from "date-fns"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function withinRange(dateISO: string, range: IDateRange): boolean {
-  const d = parseISO(dateISO)
+/** DD.MM.YYYY -> YYYY-MM-DD */
+export function ruToISO(dateRu: string): string {
+  const [dd, mm, yyyy] = dateRu.split(".")
+  return `${yyyy}-${mm}-${dd}`
+}
+
+/** теперь принимает датy в формате DD.MM.YYYY */
+export function withinRange(dateRu: string, range: IDateRange): boolean {
+  const d = parseISO(ruToISO(dateRu))
   if (range.from && isBefore(d, parseISO(range.from))) return false
   if (range.to && isAfter(d, parseISO(range.to))) return false
   return true
 }
 
+/** переводим числовой сентимент (0..3) в строковый токен */
+export function mapSentiment(n: 0 | 1 | 2 | 3): TSentiment {
+  if (n === 1) return "negative"
+  if (n === 3) return "positive"
+  return "neutral" // 0 и 2 считаем нейтральным в UI
+}
+
 export function sentimentColor(s: TSentiment) {
-  if (s === 'positive') return 'bg-emerald-500'
-  if (s === 'neutral') return 'bg-slate-400'
-  return 'bg-rose-500'
+  if (s === "positive") return "bg-emerald-500"
+  if (s === "neutral") return "bg-slate-400"
+  return "bg-rose-500"
+}
+
+/** определяем источник по URL, чтобы разбить колонки */
+export function detectSource(url: string): TSource {
+  if (url.includes("banki.ru")) return "bankiru"
+  if (url.includes("sravni")) return "sravni"
+  return "other"
 }
 
 export function heatColor(score: number): string {

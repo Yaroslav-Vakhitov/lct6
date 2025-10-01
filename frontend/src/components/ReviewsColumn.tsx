@@ -1,10 +1,10 @@
-import { format, parseISO } from "date-fns";
-import type { IReview } from "../core/types";
-import { Badge } from "./ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { sentimentColor } from "../lib/utils";
+import { format, parseISO } from "date-fns"
+import type { ExternalReview } from "../core/types"
+import { Badge } from "./ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
+import { ruToISO, sentimentColor, mapSentiment } from "../lib/utils"
 
-export function ReviewsColumn({ title, reviews }: { title: string; reviews: IReview[] }) {
+export function ReviewsColumn({ title, reviews }: { title: string; reviews: ExternalReview[] }) {
   return (
     <Card className="overflow-hidden">
       <CardHeader>
@@ -16,15 +16,19 @@ export function ReviewsColumn({ title, reviews }: { title: string; reviews: IRev
       <CardContent className="space-y-3">
         {reviews.length === 0 && <p className="text-sm text-muted-foreground">Нет отзывов по текущим фильтрам</p>}
         {reviews.map((r) => (
-          <div key={r.id} className="rounded-xl border p-3">
+          <div key={r.url} className="rounded-xl border p-3">
             <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-muted-foreground">{format(parseISO(r.date), 'dd.MM.yyyy')}</span>
-              <span className={`h-2 w-2 rounded-full ${sentimentColor(r.sentiment)}`} />
-              {r.products.map((p) => (
+              <span className="text-muted-foreground">
+                {format(parseISO(ruToISO(r.date)), "dd.MM.yyyy")} · {r.time}
+              </span>
+              <span className={`h-2 w-2 rounded-full ${sentimentColor(mapSentiment(r.sentiment))}`} />
+              <span className="text-muted-foreground">{r.location}</span>
+              {r.categories.map((p) => (
                 <Badge key={p} variant="outline">{p}</Badge>
               ))}
             </div>
-            <p className="text-sm leading-relaxed">{r.text}</p>
+            <div className="mb-1 text-sm font-medium">{r.title}</div>
+            <p className="text-sm leading-relaxed">{r.review_text}</p>
           </div>
         ))}
       </CardContent>

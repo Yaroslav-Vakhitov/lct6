@@ -1,25 +1,117 @@
-import type { IReview } from "./types"
+import type { ExternalReview } from "./types";
 
-export const PRODUCT_OPTIONS = [
-  'Кредитование',
-  'Ипотека',
-  'Банковские карты',
-  'Вклады',
-  'Накопительные счета',
-  'Страхование',
-  'ГПБ Мобайл',
-  'Газпромбанк Инвестиции',
-  'Счета эскроу',
-  'Private Banking',
-]
-
-export const MOCK_REVIEWS: IReview[] = [
-  { id: 'r1', date: '2025-05-28', source: 'sravni', products: ['Ипотека'], sentiment: 'negative', text: 'Долго рассматривали заявку, непонятные требования к объекту залога' },
-  { id: 'r2', date: '2025-05-29', source: 'bankiru', products: ['Ипотека', 'Кредитование'], sentiment: 'neutral', text: 'Одобрили, но ставка выше ожиданий. Процесс в целом ок' },
-  { id: 'r3', date: '2025-04-02', source: 'other', products: ['Банковские карты'], sentiment: 'positive', text: 'Кэшбэк пришёл вовремя, удобное приложение' },
-  { id: 'r4', date: '2025-03-20', source: 'sravni', products: ['Вклады', 'Накопительные счета'], sentiment: 'positive', text: 'Нравятся ставки и прозрачные условия' },
-  { id: 'r5', date: '2025-02-11', source: 'bankiru', products: ['ГПБ Мобайл'], sentiment: 'negative', text: 'Баг в приложении, платеж не прошёл с первого раза' },
-  { id: 'r6', date: '2025-01-10', source: 'bankiru', products: ['Страхование', 'Ипотека'], sentiment: 'neutral', text: 'Страховку оформили, но было долго' },
-  { id: 'r7', date: '2024-11-14', source: 'other', products: ['Газпромбанк Инвестиции'], sentiment: 'positive', text: 'Удобный интерфейс и быстрое пополнение' },
-  { id: 'r8', date: '2024-07-05', source: 'sravni', products: ['Счета эскроу', 'Ипотека'], sentiment: 'negative', text: 'Escrow счёт открывали 2 дня, много бумажной волокиты' },
-]
+// Конвертированные MOCK-и в новом формате:
+export const EXTERNAL_MOCK_REVIEWS: ExternalReview[] = [
+  {
+    url: "https://www.sravni.ru/bank/gazprombank/reviews/10000001/",
+    author: "User-r1",
+    location: "Москва",
+    date: "28.05.2025",
+    time: "10:15",
+    title: "Долго рассматривали заявку, непонятные требования",
+    rating: 1,
+    review_text: "Долго рассматривали заявку, непонятные требования к объекту залога",
+    bank_response: false,
+    categories: ["Ипотека"],
+    main_category: "Ипотека",
+    sentiment: 1
+  },
+  {
+    url: "https://www.banki.ru/services/responses/bank/response/10000002/",
+    author: "User-r2",
+    location: "Санкт-Петербург",
+    date: "29.05.2025",
+    time: "16:40",
+    title: "Одобрили, но ставка выше ожиданий",
+    rating: 3,
+    review_text: "Одобрили, но ставка выше ожиданий. Процесс в целом ок",
+    bank_response: true,
+    categories: ["Ипотека", "Кредитование"],
+    main_category: "Ипотека",
+    sentiment: 2
+  },
+  {
+    url: "https://example.com/other/reviews/10000003",
+    author: "User-r3",
+    location: "Новосибирск",
+    date: "02.04.2025",
+    time: "09:05",
+    title: "Кэшбэк и удобное приложение",
+    rating: 5,
+    review_text: "Кэшбэк пришёл вовремя, удобное приложение",
+    bank_response: false,
+    categories: ["Банковские карты"],
+    main_category: "Банковские карты",
+    sentiment: 3
+  },
+  {
+    url: "https://www.sravni.ru/bank/gazprombank/reviews/10000004/",
+    author: "User-r4",
+    location: "Екатеринбург",
+    date: "20.03.2025",
+    time: "13:22",
+    title: "Ставки и прозрачные условия по вкладам",
+    rating: 5,
+    review_text: "Нравятся ставки и прозрачные условия",
+    bank_response: false,
+    categories: ["Вклады", "Накопительные счета"],
+    main_category: "Вклады",
+    sentiment: 3
+  },
+  {
+    url: "https://www.banki.ru/services/responses/bank/response/10000005/",
+    author: "User-r5",
+    location: "Казань",
+    date: "11.02.2025",
+    time: "19:07",
+    title: "Сбой в приложении при платеже",
+    rating: 1,
+    review_text: "Баг в приложении, платеж не прошёл с первого раза",
+    bank_response: true,
+    categories: ["ГПБ Мобайл"],
+    main_category: "ГПБ Мобайл",
+    sentiment: 1
+  },
+  {
+    url: "https://www.banki.ru/services/responses/bank/response/10000006/",
+    author: "User-r6",
+    location: "Нижний Новгород",
+    date: "10.01.2025",
+    time: "08:50",
+    title: "Страхование оформили, но долго",
+    rating: 3,
+    review_text: "Страховку оформили, но было долго",
+    bank_response: false,
+    categories: ["Страхование", "Ипотека"],
+    main_category: "Страхование",
+    sentiment: 2
+  },
+  {
+    url: "https://example.com/other/reviews/10000007",
+    author: "User-r7",
+    location: "Краснодар",
+    date: "14.11.2024",
+    time: "12:10",
+    title: "Удобный интерфейс и пополнение",
+    rating: 5,
+    review_text: "Удобный интерфейс и быстрое пополнение",
+    bank_response: false,
+    categories: ["Газпромбанк Инвестиции"],
+    main_category: "Газпромбанк Инвестиции",
+    sentiment: 3
+  },
+  {
+    url: "https://www.sravni.ru/bank/gazprombank/reviews/10000008/",
+    author: "User-r8",
+    location: "Самара",
+    date: "05.07.2024",
+    time: "15:33",
+    title: "Escrow счёт открывали 2 дня",
+    rating: 1,
+    review_text: "Escrow счёт открывали 2 дня, много бумажной волокиты",
+    bank_response: true,
+    categories: ["Счета эскроу", "Ипотека"],
+    main_category: "Счета эскроу",
+    sentiment: 1
+  }
+];

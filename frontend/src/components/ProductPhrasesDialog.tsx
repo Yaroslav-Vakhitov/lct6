@@ -1,15 +1,25 @@
-import { useMemo } from "react";
-import type { IReview } from "../core/types";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { useMemo } from "react"
+import type { ExternalReview } from "../core/types"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
+import { mapSentiment } from "../lib/utils"
 
-export function ProductPhrasesDialog({ product, onClose, reviews }: { product: string; onClose: () => void; reviews: IReview[] }) {
-  const listPos = useMemo(() => reviews.filter(r => r.products.includes(product) && r.sentiment === 'positive'), [reviews, product])
-  const listNeg = useMemo(() => reviews.filter(r => r.products.includes(product) && r.sentiment === 'negative'), [reviews, product])
+export function ProductPhrasesDialog({
+  product, onClose, reviews
+}: { product: string; onClose: () => void; reviews: ExternalReview[] }) {
 
-  function topPhrases(list: IReview[], limit: number): { phrase: string; count: number }[] {
+  const listPos = useMemo(
+    () => reviews.filter(r => r.categories.includes(product) && mapSentiment(r.sentiment) === 'positive'),
+    [reviews, product]
+  )
+  const listNeg = useMemo(
+    () => reviews.filter(r => r.categories.includes(product) && mapSentiment(r.sentiment) === 'negative'),
+    [reviews, product]
+  )
+
+  function topPhrases(list: ExternalReview[], limit: number): { phrase: string; count: number }[] {
     const m = new Map<string, number>()
     for (const r of list) {
-      const tokens = r.text.toLowerCase().replace(/[^а-яa-zё0-9\s]/gi, ' ').split(/\s+/).filter(Boolean)
+      const tokens = r.review_text.toLowerCase().replace(/[^а-яa-zё0-9\s]/gi, ' ').split(/\s+/).filter(Boolean)
       for (let i = 0; i < tokens.length - 1; i++) {
         const bg = tokens[i] + ' ' + tokens[i + 1]
         if (bg.length < 5) continue

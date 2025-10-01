@@ -1,54 +1,73 @@
-import { useMemo, useState } from "react"
-import type { IDateRange, ISentimentAgg, ITimelineBucket } from "../core/types"
-import { MOCK_REVIEWS, PRODUCT_OPTIONS } from "../core/mocks"
-import { heatColor, withinRange } from "../lib/utils"
+import { useMemo, useState, useCallback } from "react"
+import type { ExternalReview, IDateRange, ISentimentAgg, ITimelineBucket } from "../core/types"
+import { EXTERNAL_MOCK_REVIEWS } from "../core/mocks"
+import { cn, heatColor, withinRange, ruToISO, mapSentiment, detectSource } from "../lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
 import { Separator } from "@radix-ui/react-separator"
 import { Input } from "./ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@radix-ui/react-popover"
 import { Button } from "./ui/button"
-import { CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "cmdk"
 import {
-ResponsiveContainer,
-AreaChart,
-Area,
-CartesianGrid,
-XAxis,
-YAxis,
-Tooltip,
-Legend,
-BarChart,
-Bar,
+  ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend, BarChart, Bar,
 } from 'recharts'
 import { Badge } from "./ui/badge"
-import { Command } from "./ui/command"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command"
 import { BLUE, GREEN, RED } from "../lib/constants"
 import { ReviewsColumn } from "./ReviewsColumn"
 import { ProductPhrasesDialog } from "./ProductPhrasesDialog"
+import { Check, ChevronDown, X } from "lucide-react"
 
 export function ProductsAndReviewsTab() {
   const [dateRange, setDateRange] = useState<IDateRange>({ from: '2024-01-01', to: '2025-05-31' })
   const [selected, setSelected] = useState<string[]>([])
   const [q, setQ] = useState('')
+  const [city, setCity] = useState('')            // <-- фильтр по городу
   const [realtime] = useState(false)
   const [productModal, setProductModal] = useState<string | null>(null)
+  const [prodOpen, setProdOpen] = useState(false)
+  const [cityOpen, setCityOpen] = useState(false)
+  const [cityQuery, setCityQuery] = useState("")
 
-  const filtered = useMemo(() => {
-    return MOCK_REVIEWS.filter((r) => {
+  // Деривим список категорий и подкатегорий из данных
+  const PRODUCT_OPTIONS = useMemo<string[]>(() => {
+    const set = new Set<string>()
+    for (const r of EXTERNAL_MOCK_REVIEWS) {
+      if (r.main_category) set.add(r.main_category)
+      for (const c of r.categories || []) set.add(c)
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'))
+  }, [])
+
+  const CITY_OPTIONS = useMemo<string[]>(
+    () => Array.from(new Set(EXTERNAL_MOCK_REVIEWS.map(r => r.location))).sort((a,b) => a.localeCompare(b, "ru")),
+    []
+  )
+
+  const citySuggestions = useMemo(
+    () => CITY_OPTIONS.filter(c => c.toLowerCase().includes(cityQuery.trim().toLowerCase())),
+    [CITY_OPTIONS, cityQuery]
+  )
+
+  const filtered: ExternalReview[] = useMemo(() => {
+    return EXTERNAL_MOCK_REVIEWS.filter((r) => {
       const inRange = withinRange(r.date, dateRange)
-      const hasProduct = selected.length === 0 || r.products.some((p) => selected.includes(p))
-      const byText = q.trim() === '' || r.text.toLowerCase().includes(q.trim().toLowerCase())
-      return inRange && hasProduct && byText
+      const hasProduct = selected.length === 0 || r.categories.some((p) => selected.includes(p))
+      const byText = q.trim() === '' ||
+        r.review_text.toLowerCase().includes(q.trim().toLowerCase()) ||
+        r.title.toLowerCase().includes(q.trim().toLowerCase())
+      const byCity = city.trim() === '' || r.location.toLowerCase().includes(city.trim().toLowerCase())
+      return inRange && hasProduct && byText && byCity
     })
-  }, [dateRange, selected, q])
+  }, [dateRange, selected, q, city])
 
   const productSentiments = useMemo(() => {
     const map: Record<string, ISentimentAgg> = {}
     for (const r of filtered) {
-      for (const p of r.products) {
+      const s = mapSentiment(r.sentiment)
+      for (const p of r.categories) {
         if (selected.length && !selected.includes(p)) continue
         map[p] ||= { positive: 0, neutral: 0, negative: 0, total: 0 }
-        map[p][r.sentiment] += 1
+        map[p][s] += 1
         map[p].total += 1
       }
     }
@@ -58,7 +77,7 @@ export function ProductsAndReviewsTab() {
       neutral: Math.round((s.neutral / s.total) * 100) || 0,
       negative: Math.round((s.negative / s.total) * 100) || 0,
       total: s.total,
-      score: s.total ? (s.positive - s.negative) / s.total : 0, // -1..1
+      score: s.total ? (s.positive - s.negative) / s.total : 0,
     }))
     rows.sort((a, b) => b.negative - a.negative)
     return rows
@@ -68,10 +87,10 @@ export function ProductsAndReviewsTab() {
     const buckets = new Map<string, ITimelineBucket>()
     const key = (iso: string) => iso.slice(0, 7) // YYYY-MM
     for (const r of filtered) {
-      const k = key(r.date)
+      const k = key(ruToISO(r.date))
       if (!buckets.has(k)) buckets.set(k, { date: k, positive: 0, neutral: 0, negative: 0, total: 0 })
       const b = buckets.get(k)!
-      b[r.sentiment] += 1
+      b[mapSentiment(r.sentiment)] += 1
       b.total += 1
     }
     return Array.from(buckets.values()).sort((a, b) => a.date.localeCompare(b.date))
@@ -82,28 +101,26 @@ export function ProductsAndReviewsTab() {
     'и','в','во','не','что','он','на','я','с','со','как','а','то','все','она','так','его','но','да','ты','к','у','же','вы','за','бы','по','только','ее','мне','было','вот','от','меня','еще','нет','о','из','ему','теперь','когда','даже','ну','вдруг','ли','если','уже','или','ни','быть','был','него','до','вас','нибудь','опять','уж','вам','ведь','там','потом','себя','ничего','ей','может','они','тут','где','есть','надо','ней','для','мы','тебя','их','чем','сказал','сказала','бывает','раз','два','три','этот','эта','это','эти','такой','также','всего','всем','при','больше','после','её'
   ]), [])
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  function tokenize(text: string): string[] {
+  const tokenize = useCallback((text: string): string[] => {
     return text
       .toLowerCase()
       .replace(/[^а-яa-zё0-9\s]/gi, ' ')
       .split(/\s+/)
       .filter(Boolean)
       .filter((w) => !STOP.has(w) && w.length > 2)
-  }
+  }, [STOP])
 
-  // Word cloud данные
+
+  // Word cloud
   const wordCloud = useMemo(() => {
     const freq = new Map<string, number>()
     for (const r of filtered) {
-      for (const w of tokenize(r.text)) {
+      for (const w of tokenize(r.review_text)) {
         freq.set(w, (freq.get(w) ?? 0) + 1)
       }
     }
     const entries = Array.from(freq.entries())
     if (entries.length === 0) return [] as { word: string; count: number; size: number }[]
-
-    // Масштабирование шрифта: maxCount -> 36px, minCount -> 12px
     const counts = entries.map(([, c]) => c)
     const maxCount = Math.max(...counts)
     const minCount = Math.min(...counts)
@@ -113,37 +130,31 @@ export function ProductsAndReviewsTab() {
       if (maxCount === minCount) return (maxSize + minSize) / 2
       return minSize + ((c - minCount) / (maxCount - minCount)) * (maxSize - minSize)
     }
-
     return entries
       .sort((a, b) => b[1] - a[1])
       .slice(0, 40)
       .map(([word, count]) => ({ word, count, size: scale(count) }))
   }, [filtered, tokenize])
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  function grams(text: string): string[] {
-    const tokens = text
-      .toLowerCase()
-      .replace(/[^а-яa-zё0-9\s]/gi, ' ')
-      .split(/\s+/)
-      .filter(Boolean)
-      .filter((w) => !STOP.has(w) && w.length > 2)
+  const grams = useCallback((text: string): string[] => {
+    const tokens = tokenize(text)
     const bigrams: string[] = []
     for (let i = 0; i < tokens.length - 1; i++) {
       bigrams.push(tokens[i] + ' ' + tokens[i + 1])
     }
     return [...tokens, ...bigrams]
-  }
+  }, [tokenize])
 
   const allGrams = useMemo(() => {
     const m = new Map<string, { count: number; pos: number; neg: number }>()
     for (const r of filtered) {
-      for (const g of grams(r.text)) {
+      const s = mapSentiment(r.sentiment)
+      for (const g of grams(r.review_text)) {
         if (!m.has(g)) m.set(g, { count: 0, pos: 0, neg: 0 })
         const rec = m.get(g)!
         rec.count += 1
-        if (r.sentiment === 'positive') rec.pos += 1
-        if (r.sentiment === 'negative') rec.neg += 1
+        if (s === 'positive') rec.pos += 1
+        if (s === 'negative') rec.neg += 1
       }
     }
     return m
@@ -151,8 +162,7 @@ export function ProductsAndReviewsTab() {
 
   const topPosThemes = useMemo(() => {
     return Array.from(allGrams.entries())
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      .filter(([_, v]) => v.pos > 0)
+      .filter(([, v]) => v.pos > 0)
       .sort((a, b) => b[1].pos - a[1].pos)
       .slice(0, 5)
       .map(([k, v]) => ({ theme: k, count: v.pos }))
@@ -160,8 +170,7 @@ export function ProductsAndReviewsTab() {
 
   const topNegThemes = useMemo(() => {
     return Array.from(allGrams.entries())
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      .filter(([_, v]) => v.neg > 0)
+      .filter(([, v]) => v.neg > 0)
       .sort((a, b) => b[1].neg - a[1].neg)
       .slice(0, 5)
       .map(([k, v]) => ({ theme: k, count: v.neg }))
@@ -183,7 +192,7 @@ export function ProductsAndReviewsTab() {
             </div>
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-4">
           {/* Дата от/до */}
           <div className="space-y-2">
             <label className="text-sm font-medium">С</label>
@@ -203,14 +212,21 @@ export function ProductsAndReviewsTab() {
           {/* Мультиселект продуктов */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Продукты</label>
-            <Popover>
+            <Popover open={prodOpen} onOpenChange={setProdOpen}>
               <PopoverTrigger asChild>
                 <Button variant="outline" className="w-full justify-between">
                   {selected.length ? `${selected.length} выбрано` : 'Выбрать продукты'}
-                  <span aria-hidden className="text-xs">▾</span>
+                  <ChevronDown className="h-4 w-4 opacity-60" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="p-0" align="start">
+              <PopoverContent
+                align="start"
+                side="bottom"
+                sideOffset={6}
+                // ширина = ширине кнопки, поверх всего, кликабельно
+                className="z-[9999] w-[--radix-popover-trigger-width] p-0
+             border border-border rounded-md bg-popover shadow-sm"
+              >
                 <Command>
                   <CommandInput placeholder="Поиск продукта..." />
                   <CommandList>
@@ -234,9 +250,82 @@ export function ProductsAndReviewsTab() {
             </Popover>
           </div>
 
+          {/* Город */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Город/регион</label>
+            <Popover open={cityOpen} onOpenChange={setCityOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full justify-between">
+                  {city ? city : "Выбрать город"}
+                  <ChevronDown className="h-4 w-4 opacity-60" />
+                </Button>
+              </PopoverTrigger>
+
+              <PopoverContent
+                align="start"
+                side="bottom"
+                sideOffset={6}
+                className="z-[9999] w-[--radix-popover-trigger-width] p-0
+                          border border-border rounded-md bg-popover shadow-sm"
+              >
+                <Command>
+                  <div className="flex items-center gap-1 border-b p-2">
+                    <CommandInput
+                      placeholder="Поиск города..."
+                      value={cityQuery}
+                      onValueChange={setCityQuery}
+                    />
+                    {city && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => { setCity(""); setCityQuery(""); }}
+                        title="Сбросить город"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+
+                  <CommandList className="max-h-64 overflow-auto">
+                    <CommandEmpty>Ничего не найдено</CommandEmpty>
+                    <CommandGroup heading="Доступные города">
+                      {citySuggestions.map((c) => {
+                        const isSelected = c === city
+                        return (
+                          <CommandItem
+                            key={c}
+                            onSelect={() => {
+                              setCity(c)
+                              setCityOpen(false)
+                            }}
+                            className="flex w-full items-center justify-between"
+                          >
+                            <span className="truncate">{c}</span>
+                            <Check className={`ml-2 h-4 w-4 ${isSelected ? "opacity-100" : "opacity-0"}`} />
+                          </CommandItem>
+                        )
+                      })}
+                      {/* Пункт 'Любой город' для быстрого сброса */}
+                      <CommandItem
+                        key="__any__"
+                        onSelect={() => { setCity(""); setCityQuery(""); setCityOpen(false) }}
+                        className="flex w-full items-center justify-between"
+                      >
+                        <span className="truncate text-muted-foreground">Любой город</span>
+                        <X className={`ml-2 h-4 w-4 ${city ? "opacity-60" : "opacity-0"}`} />
+                      </CommandItem>
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+
           {/* Поиск по тексту */}
-          <div className="md:col-span-3">
-            <Input placeholder="Поиск в тексте отзыва..." value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="md:col-span-4">
+            <Input placeholder="Поиск в тексте/заголовке..." value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
         </CardContent>
       </Card>
@@ -247,7 +336,7 @@ export function ProductsAndReviewsTab() {
           <CardHeader>
             <CardTitle>Динамика отзывов и тональностей (месяцы)</CardTitle>
           </CardHeader>
-          <CardContent className="h-72">
+          <CardContent className={cn("h-72", prodOpen && "pointer-events-none")}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={timeline} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -267,7 +356,7 @@ export function ProductsAndReviewsTab() {
           <CardHeader>
             <CardTitle>Тональность по продуктам (%) — топ по негативу</CardTitle>
           </CardHeader>
-          <CardContent className="h-72">
+          <CardContent className={cn("h-72", prodOpen && "pointer-events-none")}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={productSentiments} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -368,12 +457,7 @@ export function ProductsAndReviewsTab() {
             ) : (
               <div className="flex flex-wrap gap-x-3 gap-y-2">
                 {wordCloud.map((w) => (
-                  <span
-                    key={w.word}
-                    className="select-none"
-                    style={{ fontSize: `${w.size}px` }}
-                    title={`повторений: ${w.count}`}
-                  >
+                  <span key={w.word} className="select-none" style={{ fontSize: `${w.size}px` }} title={`повторений: ${w.count}`}>
                     {w.word}
                   </span>
                 ))}
@@ -385,12 +469,11 @@ export function ProductsAndReviewsTab() {
 
       {/* Список отзывов по источникам */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <ReviewsColumn title="Сравни.ру" reviews={filtered.filter((r) => r.source === 'sravni')} />
-        <ReviewsColumn title="Банки.ру" reviews={filtered.filter((r) => r.source === 'bankiru')} />
-        <ReviewsColumn title="Другое" reviews={filtered.filter((r) => r.source === 'other')} />
+        <ReviewsColumn title="Сравни.ру" reviews={filtered.filter((r) => detectSource(r.url) === 'sravni')} />
+        <ReviewsColumn title="Банки.ру" reviews={filtered.filter((r) => detectSource(r.url) === 'bankiru')} />
+        <ReviewsColumn title="Другое" reviews={filtered.filter((r) => detectSource(r.url) === 'other')} />
       </div>
 
-      {/* Диалог «конкретные формулировки» */}
       {productModal && (
         <ProductPhrasesDialog product={productModal} onClose={() => setProductModal(null)} reviews={filtered} />
       )}
