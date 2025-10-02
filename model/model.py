@@ -109,7 +109,7 @@ class ReviewCNN1D(nn.Module):
 
 # ------------------------ WRAPPER ------------------------
 class ReviewModelWrapper:
-    """Обёртка для CatBoost и CNN моделей с корректным фильтром категорий и сентимента."""
+    """Обёртка для CatBoost и CNN моделей с корректным разделением категорий и сентимента."""
 
     def __init__(self, cat_model_path, sent_model_path, cnn_model_path, device=None,
                  num_categories=18, num_sentiments=3, max_seq_len=50):
@@ -133,7 +133,7 @@ class ReviewModelWrapper:
     def _prepare_features(self, sentences):
         """Создаёт тензор для CNN из вероятностей CatBoost."""
         if not sentences:
-            return None, None, None
+            return None, None, None, None
         pool = Pool(sentences, text_features=[0])
         cat_probs = self.cat_model.predict_proba(pool)
         sent_probs = self.sent_model.predict_proba(pool)
@@ -144,38 +144,33 @@ class ReviewModelWrapper:
             features = np.vstack([features, padding])
 
         features_tensor = torch.tensor(features, dtype=torch.float32).unsqueeze(0).to(self.device)
-        return features_tensor, cat_probs, sent_probs
+        return features_tensor, cat_probs, sent_probs, len(sentences)
 
     def predict_review(self, text, threshold=0.5):
-        """Предсказание для одного отзыва с фильтром категорий и корректным сентиментом."""
+        """Предсказание для одного отзыва."""
         sentences = TextProcessor.split_sentences(text)
         if not sentences:
             return {"text": text, "categories": [], "sentiment": 2}
 
-        features_tensor, cat_probs, sent_probs = self._prepare_features(sentences)
+        features_tensor, cat_probs, sent_probs, seq_len = self._prepare_features(sentences)
         if features_tensor is None:
             return {"text": text, "categories": [], "sentiment": 2}
 
+        # CNN для категорий
         with torch.no_grad():
-            cat_out, sent_out = self.cnn_model(features_tensor)
+            cat_out, _ = self.cnn_model(features_tensor)
             cat_out = cat_out.cpu().numpy()[0]
-            sent_out = sent_out.cpu().numpy()[0]
 
         pred_cat_indices = np.where(cat_out > threshold)[0]
         categories = [int(i + 1) for i in pred_cat_indices]
 
-        # корректный сентимент: усредняем только по выбранным категориям
-        if len(pred_cat_indices) > 0:
-            selected_probs = sent_out[pred_cat_indices]  # [num_selected, 3]
-            mean_probs = np.mean(selected_probs, axis=0)
-            sentiment = int(np.argmax(mean_probs)) + 1  # 1=плохой, 2=нейтраль, 3=хороший
-        else:
-            sentiment = 2  # нейтрально, если категории не выбраны
+        # Сентимент: усредняем по всем предложениям через CatBoost
+        mean_sent = np.mean(sent_probs[:seq_len], axis=0)  # только реальные предложения
+        sentiment = int(np.argmax(mean_sent)) + 1  # 1=плохой, 2=нейтраль, 3=хороший
 
         return {"text": text, "categories": categories, "sentiment": sentiment}
 
     def predict_reviews_batch(self, review_texts, threshold=0.5):
-        """Батчевое предсказание для списка отзывов."""
         return [self.predict_review(text, threshold=threshold) for text in review_texts]
 
 
